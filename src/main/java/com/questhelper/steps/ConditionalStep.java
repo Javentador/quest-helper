@@ -30,7 +30,9 @@ import com.questhelper.questhelpers.QuestHelper;
 import com.questhelper.requirements.ChatMessageRequirement;
 import com.questhelper.requirements.MultiChatMessageRequirement;
 import com.questhelper.requirements.Requirement;
+import com.questhelper.requirements.conditional.Conditions;
 import com.questhelper.requirements.conditional.InitializableRequirement;
+import com.questhelper.requirements.util.LogicType;
 import com.questhelper.requirements.conditional.NpcCondition;
 import com.questhelper.requirements.item.ItemRequirement;
 import com.questhelper.requirements.npc.DialogRequirement;
@@ -40,7 +42,6 @@ import com.questhelper.steps.widget.AbstractWidgetHighlight;
 import lombok.NonNull;
 import lombok.Setter;
 import net.runelite.api.GameState;
-import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.*;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.client.eventbus.EventBus;
@@ -109,21 +110,67 @@ public class ConditionalStep extends QuestStep implements OwnerStep
 		this.id = id;
 	}
 
-	public void addStep(Requirement requirement, QuestStep step)
+	public ConditionalStep addStep(ConditionalStep step)
 	{
-		addStep(requirement, step, false);
+		var newSet = new HashSet<>(step.steps.keySet());
+		newSet.remove(null);
+		return addStep(passOnceCompleted(new Conditions(LogicType.OR, new ArrayList<>(newSet)), step), step, false);
+	}
+
+	public ConditionalStep addStep(Requirement requirement, QuestStep step)
+	{
+		return addStep(passOnceCompleted(requirement, step), step, false);
 	}
 
 	// Each addStep can have an ID. When you add an ID, it keeps a separate ID to Steps OrderedHashSet.
 	// When we come to deciding active step, if we come across a success step with an ID attached, then we don't activate
 	// It right away, rather we iterate until we find a better match without an ID, or a better ID and continue iterating
 
-	public void addStep(Requirement requirement, QuestStep step, boolean isLockable)
+	public ConditionalStep addStep(Requirement requirement, QuestStep step, boolean isLockable)
 	{
 		step.setLockable(isLockable);
-		this.steps.put(requirement, step);
+		this.steps.put(passOnceCompleted(requirement, step), step);
 
 		checkForConditions(requirement);
+		return this;
+	}
+
+	private Requirement passOnceCompleted(Requirement completion, QuestStep step)
+	{
+		return completion;
+//		var manualOverride = step.getSidebarManualSkipRequirement();
+//		if (completion == null || manualOverride == null)
+//		{
+//			return completion;
+//		}
+//		// Only auto-tick the sidebar when completion becomes true (rising edge). If we setShouldPass every
+//		// tick while the game still reports the step complete, an explicit untick is overwritten immediately.
+//		final boolean[] completionWasPassingLastCheck = { false };
+//		return not(new Requirement()
+//		{
+//			@Override
+//			public boolean check(Client client)
+//			{
+//				if (manualOverride.check(client))
+//				{
+//					completionWasPassingLastCheck[0] = true;
+//					return true;
+//				}
+//				boolean passed = completion.check(client);
+//				if (passed && !completionWasPassingLastCheck[0])
+//				{
+//					manualOverride.setShouldPass(true);
+//				}
+//				completionWasPassingLastCheck[0] = passed;
+//				return passed;
+//			}
+//
+//			@Override
+//			public @NotNull String getDisplayText()
+//			{
+//				return completion.getDisplayText();
+//			}
+//		});
 	}
 
 	private void checkForConditions(Requirement requirement)
@@ -441,6 +488,7 @@ public class ConditionalStep extends QuestStep implements OwnerStep
 				.map(ItemRequirement.class::cast)
 				.collect(Collectors.toList());
 		renderInventory(graphics, activeDp, itemRequirements, false);
+		renderBank(graphics, requirements);
 		for (AbstractWidgetHighlight widgetHighlights : widgetsToHighlight)
 		{
 			widgetHighlights.highlightChoices(graphics, client, plugin);
